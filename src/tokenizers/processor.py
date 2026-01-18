@@ -65,18 +65,19 @@ class TokenizerProcessor():
         source_tokens = source.vocab.keys()
         target_tokens = target.vocab.keys()
         
-        #Transferring each one character token first
-        for idx, token in enumerate(source_tokens):
-            if token not in target_tokens:
-                if len(token) == 1:
-                    target.vocab.update({token, source.vocab[token]})
-                elif len(token) == 2:
-                    target.vocab.update({token, source.vocab[token]})
-                    #Add merges for token but persist order. 
-                    target.merges.append(source.merges[idx]) # this line probably will change
-                else:
-                    #I will implement here next
-                    continue
+        while (target.size < target_size):
+            for idx, token in enumerate(source_tokens):
+                if token not in target_tokens:
+                    if len(token) == 1:
+                        target.vocab.update({token, source.vocab[token]})
+                    elif len(token) == 2:
+                        target.vocab.update({token, source.vocab[token]})
+                        #Add merges for token but persist order. 
+                        target.merges.append(source.merges[idx]) # this line probably will change
+                    else:
+                        #I will implement here next
+                        continue
+
             
 
 
