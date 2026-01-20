@@ -1,3 +1,5 @@
+from ..tokenizers.tokenizer import Tokenizer
+
 def get_nested(dictionary: dict, keys: list[str]):
     """Utility function to get right value in nested dictionaries with given keys.
     

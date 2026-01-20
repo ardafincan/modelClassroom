@@ -1,6 +1,8 @@
 from .tokenizer import Tokenizer
+from .merge import Merge, serializeMerges, deserializeMerges
 from ..utils.dictUtils import get_nested
 import json
+import struct
 
 # This class is main process module for Tokenizer class.
 class TokenizerProcessor():
@@ -19,8 +21,10 @@ class TokenizerProcessor():
         """
         with open(path, "r") as f:
             tokenizerDict = json.load(f)
+
         vocab = get_nested(tokenizerDict, vocab_keys)
-        merges = list(get_nested(tokenizerDict, merge_keys))
+        mergesList = list(get_nested(tokenizerDict, merge_keys))
+        merges = serializeMerges(mergesList)
         return Tokenizer(vocab, merges)
 
     def store_tokenizer(self, path: str, tokenizer: Tokenizer, vocab_keys: list[str] = ["model", "vocab"],
@@ -42,7 +46,7 @@ class TokenizerProcessor():
         vocab_parent = get_nested(tokenizerDict, vocab_keys[:-1])
         vocab_parent[vocab_keys[-1]] = tokenizer.vocab
         merges_parent = get_nested(tokenizerDict, merge_keys[:-1])
-        merges_parent[merge_keys[-1]] = tokenizer.merges
+        merges_parent[merge_keys[-1]] = deserializeMerges(tokenizer.merges)
         
         path = path if (target_path == "") else target_path
         with open(path, "w") as f:
@@ -73,9 +77,12 @@ class TokenizerProcessor():
                     elif len(token) == 2:
                         target.vocab.update({token, source.vocab[token]})
                         #Add merges for token but persist order. 
+                        #There should be a function like handleMerges(); 
                         target.merges.append(source.merges[idx]) # this line probably will change
                     else:
                         #I will implement here next
+                        if (careTurkish and checkIsTurkish(token)):
+                            target.vocab.update({token, source.vocab[token]})
                         continue
 
             

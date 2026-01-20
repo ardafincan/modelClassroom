@@ -1,5 +1,7 @@
+from .merge import Merge
+
 class Tokenizer():
-    def __init__(self, vocab: dict , merges: list[str]):
+    def __init__(self, vocab: dict, merges: dict[str, Merge]): #redesign merges structure
         """Initiliaze a Tokenizer object
         
         Args:
