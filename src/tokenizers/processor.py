@@ -2,6 +2,7 @@ from .tokenizer import Tokenizer
 from ..utils.utils import get_nested
 import json
 from sentencepiece import sentencepiece_model_pb2 as sp_model
+from ..utils.freq_utils.freq import func
 
 
 # This class is main process module for Tokenizer class.
@@ -86,6 +87,8 @@ class TokenizerProcessor:
         targetList = list(target.vocab.keys())
 
         targetListSize = len(targetList)
+
+        langSpecificList = func(source)
 
         for token in sourceList:
             if targetListSize >= target_size:
