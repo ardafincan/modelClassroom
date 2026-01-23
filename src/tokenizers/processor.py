@@ -1,6 +1,7 @@
 from .tokenizer import Tokenizer
 from ..utils.utils import get_nested
 import json
+from sentencepiece import sentencepiece_model_pb2 as sp_model
 
 
 # This class is main process module for Tokenizer class.
@@ -27,7 +28,7 @@ class TokenizerProcessor:
         path: str,
         tokenizer: Tokenizer,
         vocab_keys: list[str] = ["model", "vocab"],
-        target_path: str = "",
+        tokenizer_config: dict = {},
     ):
         """This function stores the given Tokenizer object as tokenizer.json file.
         ATTENTION: path parameter should point the json file of original tokenizer that user want to change.
@@ -40,13 +41,26 @@ class TokenizerProcessor:
         Returns:
             The path of the saved Tokenizer, if successfull."""
 
+        model = sp_model.ModelProto()
 
-        vocab_parent = get_nested(tokenizerDict, vocab_keys[:-1])
-        vocab_parent[vocab_keys[-1]] = tokenizer.vocab
+        if tokenizer_config == {}:
+            model.trainer_spec.model_type = sp_model.TrainerSpec.ModelType.BPE
+            model.trainer_spec.vocab_size = tokenizer.size
 
-        path = path if (target_path == "") else target_path
-        with open(path, "w") as f:
-            json.dump(tokenizerDict, f)
+            model.normalizer_spec.name = "identity"
+            model.normalizer_spec.add_dummy_prefix = True
+            model.normalizer_spec.remove_extra_whitespaces = True
+        # implement else here
+
+        for idx, token in enumerate(tokenizer.vocab):
+            piece = model.SentencePiece()
+            piece.piece = token
+            piece.score = -idx
+            piece.type = model.SentencePiece.NORMAL
+            model.pieces.append(piece)
+
+        with open(path, "wb") as f:
+            f.write(model.SerializeToString())
 
         return path
 
@@ -77,7 +91,9 @@ class TokenizerProcessor:
             if targetListSize >= target_size:
                 break
             if token not in targetList and len(token) == 1:
-                targetList.insert(source.vocab[token], token)
+                targetList.insert(
+                    source.vocab[token], token
+                )  # fix indexing for target tokenizer
                 targetListSize += 1
 
         for token in sourceList:
@@ -97,7 +113,9 @@ class TokenizerProcessor:
 
         i = 3
         while targetListSize < target_size:
-            if targetListSize >= target_size or source.size + target.size < target_size: #fix here
+            if (
+                targetListSize >= target_size or source.size + target.size < target_size
+            ):  # fix here
                 break
             for token in sourceList:
                 if targetListSize >= target_size:

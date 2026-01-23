@@ -1,7 +1,7 @@
 
 
 class Tokenizer():
-    def __init__(self, vocab: dict): #redesign merges structure
+    def __init__(self, vocab: dict): #handle unkown, bos, eos tokens 
         """Initiliaze a Tokenizer object
         
         Args:

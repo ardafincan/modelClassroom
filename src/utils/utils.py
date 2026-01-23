@@ -15,6 +15,7 @@ def get_nested(dictionary: dict, keys: list[str]):
         result = result[key] 
     return result
 
+# below will be fixed and not working now
 def parseTokenizerModelFile(path: str, target_path: str = ""):
     model = spmodel.ModelProto()
     with open(path, 'rb') as f:
