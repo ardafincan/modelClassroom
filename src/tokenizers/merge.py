@@ -1,9 +1,11 @@
-class Merge():
-    def __init__(self, index: int, subtokens: list):
-        self.index = index
-        self.subtokens = subtokens
+from tokenizer import Tokenizer
 
-def serializeMerges(merges: list): 
+class Merge():
+    def __init__(self, token: str, merges:dict[int, list[str]]):
+        self.token = token
+        self.merges = merges
+
+def serializeMerges(merges: list): # fix this seri/deseri functions 
         mergeMap = {}
         for idx, merge in enumerate(merges):
             tempMerge = Merge(idx, merge)
@@ -16,14 +18,16 @@ def deserializeMerges(merges: dict[str, Merge]):
         mergesList.append(merges[merge].subtokens)
     return mergesList
 
-#below functions will be implemented later
-def index_merges(mergeDict: dict):
-    mergeSet = {}
-    for merge in mergeDict:
-        mergeSet.add()
-        
-
 def handleMerges(source: Tokenizer, target: Tokenizer, token: str): 
     source_merges = source.merges
     target_merges = target.merges
+
+    tempMerge: Merge
+
+    for idx, merge in enumerate(source_merges):
+        if token == merge[0] + merge[1]:
+            mergesForThisTokenDict[idx] = merge
+    tempMerge = Merge(idx, mergesForThisTokenDict)
+    mergeDict[token] = tempMerge
+
     return
