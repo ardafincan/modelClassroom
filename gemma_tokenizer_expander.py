@@ -10,15 +10,20 @@ from transformers import GemmaTokenizerFast
 DEFAULT_REF_MODEL_ID = "google/gemma-3-1b-it"
 
 FIRST_ADDED_TOKENS = [
-    "<pad>",
-    "<eos>",
-    "<bos>",
-    "<unk>",
-    "<mask>",
-    "[multimodal]",
-    *[f"<unused{i}>" for i in range(100)],
-    "<start_of_turn>",
-    "<end_of_turn>",
+    "<pad>",  # Padding token for batch processing
+    "<eos>",  # End of sequence token
+    "<bos>",  # Beginning of sequence token
+    "<unk>",  # Unknown token for out-of-vocabulary words
+    "<mask>",  # Mask token for masked language modeling
+    "[multimodal]",  # Special token for multimodal inputs
+    *[f"<unused{i}>" for i in range(100)],  # 100 unused placeholder tokens (unused0-unused99)
+    "<start_of_turn>",  # Marks the start of a conversation turn
+    "<end_of_turn>",  # Marks the end of a conversation turn
+    "\n",  # Single newline character
+    "\n\n",  # Double newline (paragraph break)
+    "▁",  # SentencePiece word boundary marker (single)
+    "▁▁",  # Double word boundary marker
+    # HTML table tags
     "<table>",
     "<caption>",
     "<thead>",
@@ -35,6 +40,7 @@ FIRST_ADDED_TOKENS = [
     "</tr>",
     "</th>",
     "</td>",
+    # HTML heading tags
     "<h1>",
     "<h2>",
     "<h3>",
@@ -49,6 +55,7 @@ FIRST_ADDED_TOKENS = [
     "</h5>",
     "</h6>",
     "</blockquote>",
+    # HTML formatting tags
     "<strong>",
     "<em>",
     "<b>",
@@ -67,6 +74,7 @@ FIRST_ADDED_TOKENS = [
     "</sub>",
     "</sup>",
     "</code>",
+    # HTML structure tags
     "<a>",
     "<html>",
     "<body>",
@@ -89,13 +97,16 @@ FIRST_ADDED_TOKENS = [
     "</div>",
     "</iframe>",
     "</footer>",
+    # Byte tokens (256 tokens for all possible byte values: 0x00 to 0xFF)
     *[f"<0x{i:02X}>" for i in range(256)],
 ]
 
 LAST_ADDED_TOKENS = [
+    "\t",
+    "\t\t",
     "<start_of_image>",
     "<end_of_image>",
-    *[f"<unused{i}>" for i in range(100, 201)],
+    *[f"<unused{i}>" for i in range(101, 201)],
 ]
 
 
@@ -176,6 +187,9 @@ class GemmaTokenizerExpander:
     def _create_new_tokens_list(self):
         student_vocab = self.student_tokenizer.get_vocab()
         removed_tokens = []
+        if "<image_soft_token>" in student_vocab:
+            del student_vocab["<image_soft_token>"]
+            removed_tokens.append("<image_soft_token>")
         for token in FIRST_ADDED_TOKENS:
             if token in student_vocab:
                 del student_vocab[token]
@@ -186,14 +200,16 @@ class GemmaTokenizerExpander:
                 removed_tokens.append(token)
         # sort by their ids
         new_tokens = sorted(student_vocab.items(), key=lambda x: x[1])
-        new_tokens = [token for token, id in new_tokens]
+        new_tokens = [token for token, _ in new_tokens]
 
         new_tokens = FIRST_ADDED_TOKENS + new_tokens
         student_vocab = {}
         new_vocab_size = len(new_tokens)
 
-        for i in range(new_vocab_size):
-            student_vocab[new_tokens[i]] = i
+        i = 0
+        for token in new_tokens + LAST_ADDED_TOKENS:
+            student_vocab[token] = i
+            i += 1
 
         teacher_vocab = self.teacher_tokenizer.get_vocab()
         teacher_vocab_size = len(teacher_vocab)
@@ -240,25 +256,20 @@ class GemmaTokenizerExpander:
 
         # last add remaining 3,4,5 gradually letter tokens until reacheing target vocab size
         for i in range(3, 6):
-            if new_vocab_size >= self.target_vocab_size:
+            if new_vocab_size >= self.target_vocab_size - 1:
                 break
             for token, id in tqdm(teacher_vocab.items(), desc=f"Adding {i}-letter tokens"):
+                if new_vocab_size > self.target_vocab_size - 1:
+                    break
                 if len(token) == i and token not in student_vocab:
                     new_token_id = round(id * (new_vocab_size / teacher_vocab_size))
                     if new_token_id < first_added_len:
                         new_token_id += first_added_len
                     new_tokens.insert(new_token_id, token)
                     new_vocab_size += 1
-        # remove last tokens if new_vocab_size >= self.target_vocab_size:
-        # be sure there is not duplicated items in the list
-        student_vocab = {}
-        for i in range(self.target_vocab_size):
-            student_vocab[new_tokens[i]] = i
-        new_tokens = list(student_vocab.keys())
-        new_tokens.extend(LAST_ADDED_TOKENS)
-        new_tokens.append("<image_soft_token>")
+                    student_vocab[token] = new_vocab_size
 
-        print("Distinct new tokens length:", len(set(new_tokens)))
+        new_tokens.extend(LAST_ADDED_TOKENS)
 
         return new_tokens
 
@@ -283,7 +294,11 @@ class GemmaTokenizerExpander:
         del model.pieces[:]
 
         normal_token_score = -0
+        added_tokens = set()
         for token in tqdm(new_tokens, desc="Creating sentencepiece model"):
+            if token in added_tokens:
+                continue
+            added_tokens.add(token)
             piece = model.pieces.add()
             piece.piece = token
             piece_type = self._get_piece_type(token)
@@ -292,27 +307,63 @@ class GemmaTokenizerExpander:
 
             # Special tokens and control tokens have score 0
             if piece_type > 1:  # UNKNOWN, CONTROL, USER_DEFINED, BYTE
-                if piece_type == 6:  # BYTE type
-                    piece.score = -100 * 100 * 100  # Very low score for byte tokens
-                else:
-                    piece.score = 0
+                piece.score = 0
             else:
                 piece.score = normal_token_score
+                normal_token_score -= 1
 
-            normal_token_score -= 1
-
-        """ model.trainer_spec.unk_id = 3
+        model.trainer_spec.unk_id = 3
         model.trainer_spec.bos_id = 2
         model.trainer_spec.eos_id = 1
         model.trainer_spec.pad_id = 0
 
         model.trainer_spec.eos_piece = "<eos>"
-        model.trainer_spec.bos_piece = "<bos>" """
+        model.trainer_spec.bos_piece = "<bos>"
 
-        model.trainer_spec.vocab_size = len(new_tokens)
-        print(model.trainer_spec.vocab_size)
+        model.trainer_spec.vocab_size = len(model.pieces)
+        print(
+            f"Target vocab size: {self.target_vocab_size + len(LAST_ADDED_TOKENS)}, Current vocab size: {model.trainer_spec.vocab_size}"
+        )
 
         with open("new_tokenizer.model", "wb") as f:
             f.write(model.SerializeToString())
 
         return "new_tokenizer.model"
+
+
+if __name__ == "__main__":
+    datasets_dicts = [
+        {
+            "id": "Ba2han/TDK_Sozluk-Turkish-v2",
+            "columns": ["madde", "anlam", "ornek"],
+            "split": "train",
+            "min_freq": 3,
+        },
+        {
+            "id": "alibayram/cosmos-corpus-00-5",
+            "columns": ["text"],
+            "split": "train",
+            "min_freq": 1600,
+        },
+        #  {
+        #    "id": "wikimedia/wikipedia",
+        #    "subset": "20231101.tr",
+        #    "columns": ["text"],
+        #    "split": "train",
+        #    "min_freq": 180,
+        #    "limit": 1000,
+        #  }
+    ]
+
+    expander = GemmaTokenizerExpander(
+        teacher_tokenizer_id="google/gemma-3-1b-it",
+        student_tokenizer_id="alibayram/magibu-64k-processor",
+        target_vocab_size=2**17,
+        datasets_dicts=datasets_dicts,
+    )
+
+    model_file_path = expander.create_new_tokenizer()
+    from transformers import GemmaTokenizerFast
+
+    tokenizer = GemmaTokenizerFast.from_pretrained(".", vocab_file=model_file_path)
+    print(tokenizer.tokenize("Merhaba nasılsınız?"))
